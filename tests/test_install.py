@@ -4,13 +4,18 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-spec = importlib.util.spec_from_file_location("jev_install", Path(__file__).resolve().parents[1] / "install.py")
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
+import jevkit  # the launcher must run THIS checkout's code
+
+spec = importlib.util.spec_from_file_location("jev_install", REPO / "install.py")
 install = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(install)
 
@@ -507,3 +512,30 @@ class ReportWarningTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LauncherRunsFromAnywhereTests(unittest.TestCase):
+    """The launcher put PYTHONPATH="$here" in front of the interpreter. On Windows that
+    shell path (/c/Users/...) means nothing to a native Python and PYTHONPATH separates
+    with ';' there rather than ':', so the variable was unparseable and `jev` worked only
+    when the checkout happened to be the working directory -- every cron and agent shell
+    that called it from elsewhere died with "No module named jevkit". It now runs from the
+    checkout, which puts jevkit on sys.path without any path translation."""
+
+    def test_it_reports_this_checkouts_version_from_an_unrelated_directory(self):
+        launcher = REPO / "bin" / "jev"
+        self.assertTrue(launcher.exists(), "bin/jev is the launcher every install links to")
+        shell = shutil.which("sh") or shutil.which("bash")
+        if not shell:
+            self.skipTest("no POSIX shell on PATH to run the launcher")
+
+        with tempfile.TemporaryDirectory() as elsewhere:
+            env = dict(os.environ)
+            env.pop("PYTHONPATH", None)  # the bug was invisible while PYTHONPATH carried a fix
+            proc = subprocess.run([shell, str(launcher), "--version"], cwd=elsewhere,
+                                  capture_output=True, text=True, timeout=180, env=env)
+
+        self.assertEqual(proc.returncode, 0,
+                         f"launcher failed from {elsewhere!r}: {proc.stderr.strip()[:400]}")
+        self.assertIn(jevkit.__version__, proc.stdout,
+                      "the launcher must run the checkout it lives in")

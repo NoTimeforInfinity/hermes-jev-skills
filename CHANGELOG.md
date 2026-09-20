@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.19.0 (2026-09-20)
+
+**`jev` worked only from inside the checkout on Windows**
+
+- `bin/jev` prepended the checkout to `PYTHONPATH` so the interpreter could find `jevkit`. On
+  Windows that shell path (`/c/Users/...`) means nothing to a native Python, and `PYTHONPATH`
+  separates with `;` there rather than `:`, so the variable was unparseable and the launcher
+  worked **only when the checkout happened to be the working directory**. Every cron and every
+  agent shell calling `jev` from anywhere else got `No module named jevkit`.
+- It now runs from the checkout, which puts `jevkit` on `sys.path` with no path translation and
+  no dependence on the caller's environment.
+- One test, in `tests/test_install.py`, runs the launcher from an unrelated directory **with
+  `PYTHONPATH` removed**. That second half matters: a `PYTHONPATH` that happens to carry the
+  checkout hides this bug completely, which is presumably how it survived this long.
+
 ## 0.18.0 (2026-09-20)
 
 Three things that were shipped but not performing: measured, then fixed.
