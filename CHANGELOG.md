@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.19.0 (2026-09-20)
+
+**Jev is now reachable through Venice, at zero price**
+
+- `jev setup-key --provider venice` stores a key from venice.ai/settings/keys. Venice serves the
+  same decision model itself, as a first-class modality — `GET /models?type=decision` returns
+  `jev-latest`, named "Jev (System One)", priced **0 usd / 0 diem** — reached at
+  `POST /api/v1/decisions`, not `/chat/completions`, which answers **404** for it.
+- Same request, same answers, same three question shapes. Verified live on all of them: a `choice`
+  over a billing/technical split returned **confidence 1.0**; a `score` asked whether a passage
+  about crate rebuilds was relevant to a Blender texture problem returned **0.04**, with **0.97** on
+  "irrelevant"; `noul` returned a probability with no criteria.
+- **Appended last in `PROVIDERS`.** An install already resolving through TypeSafe or OpenRouter
+  keeps routing exactly where it did — a machine holding both an OpenRouter and a Venice key still
+  resolves to OpenRouter, and a test asserts it. Venice being free is not a reason to move anyone.
+- Transport and model are resolved **at call time** rather than bound into a module-level table, so
+  a monkeypatched transport still takes effect (the trap CONTRIBUTING.md warns about).
+- One limit worth knowing before pointing a large `choice` at it: Venice answers a question with more
+  than 255 criteria with `Too many choices. Must have at most 255 choices.` Shortlist first.
+
 ## 0.18.0 (2026-09-20)
 
 Three things that were shipped but not performing: measured, then fixed.

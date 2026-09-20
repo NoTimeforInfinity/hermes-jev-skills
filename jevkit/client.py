@@ -27,6 +27,12 @@ DEFAULT_MODEL = "jev-latest"
 # made-up confidence, which is the one thing a decision model exists not to do.
 OPENROUTER_ENDPOINT = "https://openrouter.ai/api/alpha/decisions"
 OPENROUTER_MODEL = "~typesafe/jev-latest"
+# Venice serves the same decision model as a first-class modality (`type: "decision"`), reached
+# at POST /api/v1/decisions — not /chat/completions, which answers 404 for it. It is listed by
+# /models?type=decision (and only by type=all otherwise), named "Jev (System One)", and priced
+# 0 usd / 0 diem. Request and answers are the same shapes as the other two providers.
+VENICE_ENDPOINT = "https://api.venice.ai/api/v1/decisions"
+VENICE_MODEL = "jev-latest"
 MAX_RESPONSE_BYTES = 1_000_000
 MAX_STATE_CHARS = 60_000
 USER_AGENT = "hermes-jev-skills/0.1"
@@ -88,6 +94,28 @@ def _http_transport(body: bytes, headers: Dict[str, str], timeout: float, url: s
 
 def _openrouter_transport(body: bytes, headers: Dict[str, str], timeout: float) -> bytes:
     return _http_transport(body, headers, timeout, OPENROUTER_ENDPOINT)
+
+
+def _venice_transport(body: bytes, headers: Dict[str, str], timeout: float) -> bytes:
+    return _http_transport(body, headers, timeout, VENICE_ENDPOINT)
+
+
+def _default_model(via: str) -> str:
+    """Read the module globals at call time: binding them at import would defeat a later
+    monkeypatch, which is the trap CONTRIBUTING.md warns about."""
+    if via == "openrouter":
+        return OPENROUTER_MODEL
+    if via == "venice":
+        return VENICE_MODEL
+    return DEFAULT_MODEL
+
+
+def _transport_for(via: str) -> Callable[[bytes, Dict[str, str], float], bytes]:
+    if via == "openrouter":
+        return _openrouter_transport
+    if via == "venice":
+        return _venice_transport
+    return _http_transport
 
 
 _RETRYABLE = {"rate_limited", "overloaded", "network", "http_500", "http_502", "http_503", "http_504"}
@@ -169,7 +197,7 @@ def ask(
     encoded_state = state if isinstance(state, str) else json.dumps(state, separators=(",", ":"), default=str)
     if len(encoded_state) > MAX_STATE_CHARS:
         raise JevError("state_too_large")
-    default_model = OPENROUTER_MODEL if via == "openrouter" else DEFAULT_MODEL
+    default_model = _default_model(via)
     body = json.dumps(
         {"state": state, "model": model or os.environ.get("TYPESAFE_MODEL") or default_model,
          "questions": {name: dict(q) for name, q in questions.items()}},
@@ -182,7 +210,7 @@ def ask(
         # about the person or the decision.
         headers["HTTP-Referer"] = "https://github.com/kerpopule/hermes-jev-skills"
         headers["X-Title"] = "Hermes Jev Skills"
-    send = transport or (_openrouter_transport if via == "openrouter" else _http_transport)
+    send = transport or _transport_for(via)
 
     started = time.monotonic()
     attempt = 0
